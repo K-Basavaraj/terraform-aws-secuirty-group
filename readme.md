@@ -2,7 +2,7 @@
 
 
 ## 📊 Architecture Diagram
-![secuirty group flow with other components](terraform-aws-secuirty-group\images\sg_drawio.svg)
+![secuirty group flow with other components](img/sg.webp)
 
 ## Overview
 
