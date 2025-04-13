@@ -4,102 +4,88 @@
 ## 📊 Architecture Diagram
 ![secuirty group flow with other components](img/sg.webp)
 
-## Overview
+# 🔒 AWS Infrastructure Security Group Overview
 
-This document outlines the architecture and traffic flow for a secure and scalable AWS-based web application. It includes public and private-facing components, using load balancers, bastion host access, and database access control.
-
----
-
-## 🔧 Components
-
-- **Frontend Load Balancer (FrontendLB)** - Public-facing
-- **Frontend EC2 Instances (frontend-servers)** - Private
-- **Backend Load Balancer (BackendLB)** - Internal-facing
-- **Backend EC2 Instances (backend-servers)** - Private
-- **Amazon RDS (MySQL Database)** - Private
-- **Bastion Host** - Admin Access
-- **Employees** - SSH and troubleshooting
-- **End Users** - Application access
+This document describes the AWS infrastructure architecture and how security groups are configured to manage access between various components.
 
 ---
 
-## 🔐 Security Group Rules & Flow
+## 📶 Flow of Application Traffic
 
-### 1. Users ➝ Frontend Load Balancer
-- Public access
-- **Allowed ports**: `80 (HTTP)`, `443 (HTTPS)`
+### 1. User Access
+When a user hits the application, the first request goes to the **Frontend Load Balancer (FrontendLB)**.
 
-### 2. Frontend Load Balancer ➝ Frontend EC2 Instances
-- Internal access only
-- **Allowed ports**: `80`
-- ❌ Do not allow other ports
+- **FrontendLB** is internet-facing, so it must allow:
+  - Port **80** (HTTP) or
+  - Port **443** (HTTPS)
 
-### 3. Frontend EC2 ➝ Backend Load Balancer
-- Internal routing (e.g., DNS like `backend-dev.aws.online`)
-- Use **port 80** for clean URL routing
-- **Allowed ports**: `80`
+---
 
-### 4. Backend Load Balancer ➝ Backend EC2 Instances
-- Internal load balancing
-- **Allowed ports**: `8080`
+### 2. Frontend Load Balancer → Frontend Servers
+**FrontendLB** forwards the request to frontend EC2 instances (**frontend-servers**).
 
-### 5. Backend EC2 ➝ Amazon RDS
-- Database access (MySQL)
-- **Allowed ports**: `3306`
-- RDS is private and not load balanced (managed by AWS)
-- Accessible via **RDS endpoint**
+**Security Group Rules**:
+- Allow **only port 80** from the load balancer.
+- No other ports should be allowed to the frontend servers.
+
+---
+
+### 3. Frontend Servers → Backend Load Balancer
+**Frontend servers** send traffic to the **Backend Load Balancer (BackendLB)**.
+
+- Even though backend servers listen on **port 8080**, to keep URLs clean (e.g., `backend-dev.aws.online` instead of `backend-dev.aws.online:8080`), configure the **listener on BackendLB** to use **port 80**.
+- **BackendLB** is **internal-facing (private)**, not exposed to the internet.
+
+---
+
+### 4. Backend Load Balancer → Backend Servers
+**BackendLB** forwards requests to backend EC2 instances (**backend-servers**).
+
+**Security Group Rules**:
+- Allow **traffic on port 8080 only** from BackendLB.
+
+---
+
+### 5. Backend Servers → RDS (MySQL Database)
+**Backend servers** connect to the **RDS instance** over **port 3306**.
+
+- The **RDS instance** only accepts traffic from backend servers.
+- Note: RDS is managed by AWS and does not have a user-configurable load balancer.
+  - Access is done via the **RDS endpoint** (e.g., `rds-instance.abcdef12345.us-west-2.rds.amazonaws.com`).
 
 ---
 
 ## 👨‍💻 Bastion Host Access
 
-### Purpose
-Used by employees for secure access to private instances for troubleshooting.
+Since all servers are in **private subnets**, internal access is managed via a **Bastion Host (jump box)** for employee use.
 
-### Access Rules
+### 🔐 Bastion Access Matrix
 
-#### From Employees ➝ Bastion
-- **Allowed ports**: `22` (SSH)
-
-#### From Bastion ➝ Frontend EC2
-- **Allowed ports**: `22`, `80` (SSH & HTTP app check)
-
-#### From Bastion ➝ Backend Load Balancer
-- **Allowed port**: `80` (No SSH access)
-
-#### From Bastion ➝ Backend EC2
-- **Allowed ports**: `22`, `8080`
-
-#### From Bastion ➝ RDS (MySQL)
-- **Allowed port**: `3306`
+| Source     | Destination        | Ports | Purpose                        |
+|------------|--------------------|-------|--------------------------------|
+| Employee   | Bastion             | 22    | SSH access to Bastion          |
+| Bastion    | Frontend Servers    | 22    | SSH login for troubleshooting  |
+| Bastion    | Frontend Servers    | 80    | Check if the app is running    |
+| Bastion    | BackendLB           | 80    | BackendLB does not allow SSH   |
+| Bastion    | Backend Servers     | 22    | SSH login                      |
+| Bastion    | Backend Servers     | 8080  | Application verification       |
+| Bastion    | RDS (MySQL)         | 3306  | MySQL database access (debug)  |
 
 ---
 
-## 🧠 Notes
+## 🛡️ Load Balancer Types
 
-- **Frontend Load Balancer** is **public-facing** (Internet-facing)
-- **Backend Load Balancer** is **private-facing** (Internal only)
-- **RDS** does not use a load balancer, access is managed via RDS **endpoint**
-- Bastion host acts as the **only jump box** for all private access
-- All other resources reside in **private subnets**
+### Frontend Load Balancer:
+- **Type**: Internet-facing
+- **Purpose**: Accepts traffic from external users
 
----
-
-## 🔁 Traffic Flow Summary
-
-1. **User** accesses the app via `FrontendLB` on port `80/443`
-2. Traffic goes to **Frontend EC2** on port `80`
-3. Frontend server calls internal **BackendLB** on port `80`
-4. BackendLB routes traffic to **Backend EC2** on port `8080`
-5. Backend EC2 connects to **RDS** on port `3306` for DB queries
-6. **Employees** use **Bastion** to troubleshoot backend/frontend or DB as needed
+### Backend Load Balancer:
+- **Type**: Internal (private)
+- **Purpose**: Accepts traffic only from frontend servers
 
 ---
 
-## 📌 Best Practices
+⚠️ **Note**: All communication is protected and controlled using **AWS Security Groups**. Only required ports are allowed between components to maintain a secure architecture.
 
-- Use **Security Groups** to strictly control access to each component
-- Keep **Backend Load Balancer** internal to avoid exposing it publicly
-- Monitor access logs and restrict Bastion access to only authorized employees
-- Rotate credentials and use IAM roles wherever possible
+---
 
